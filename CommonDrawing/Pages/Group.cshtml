@@ -66,7 +66,7 @@
         if (index === -1) {
             createStage(listId);
         }
-
+        
         const layer = layers[searchListIndex(listId)].layer;
         if (shape.shapeType === 'Line') {  
             const line = new Konva.Line({
@@ -113,7 +113,6 @@
     });
     hubConnection.on("AddList", function (listId)
     {   
-        console.log(listId);
         createStage(listId);
     });
     
@@ -141,7 +140,7 @@
         const layer = new Konva.Layer();
         stage.add(layer);
     
-        layers.push({ num: numList, layer: layer });
+        layers.push({ num: +numList, layer: layer });
         addStageEvents(stage, layer, numList);
         container.appendChild(stageContainer);
     }
@@ -150,7 +149,6 @@
         stage.on("mousedown touchstart", function ()
         {
             if (!canDraw) return;
-            //if (tool !== 'Line') return;
 
             isDrawing = true;
             let pos = stage.getPointerPosition();
@@ -379,7 +377,7 @@
         }
     }
     function searchListIndex(id) {
-        return layers.findIndex(layer => layer.num === id);
+        return layers.findIndex(layer => layer.num === +id);
     }
     
     hubConnection.on("RemoveList", function (listId) {
