@@ -12,6 +12,7 @@
     <select id="shapeSelect" class="form-control mb-2">
         <option value="Line">Line</option>
         <option value="Text">Text</option>
+        <option value="Rectangle">Rectangle</option>
     </select>
     <input type="text" id="textInput" class="form-control mb-2" placeholder="Add some text" hidden/>
 </div>
@@ -43,6 +44,8 @@
     const layers = [];
     let selectStage;
     let tool = document.getElementById('shapeSelect').value;
+    let startX, startY;
+    let currentSquare;
 
     const hubConnection = new signalR.HubConnectionBuilder()
         .withUrl("/drawing")
@@ -85,6 +88,18 @@
             });
 
             layer.add(text);
+        } else if (shape.shapeType === 'Rectangle') {
+             const rect = new Konva.Rect({
+                x: shape.x,
+                y: shape.y,
+                width: shape.width,
+                height: shape.height,
+                fill: shape.fill,
+                stroke: shape.stroke,
+                strokeWidth: shape.strokeWidth,
+             });
+    
+             layer.add(rect);
         } else {
             console.log(shape.shapeType)
         }
@@ -135,20 +150,38 @@
         stage.on("mousedown touchstart", function ()
         {
             if (!canDraw) return;
-            if (tool !== 'Line') return;
+            //if (tool !== 'Line') return;
 
             isDrawing = true;
             let pos = stage.getPointerPosition();
-            lastLine = new Konva.Line({
-                stroke: "black",
-                strokeWidth: 2,
-                points: [pos.x, pos.y],
-                lineCap: "round",
-                lineJoin: "round",
-                tension: 0.5,
-            });
-
-            layer.add(lastLine);
+            if (tool === 'Line') {
+                lastLine = new Konva.Line({
+                    stroke: "black",
+                    strokeWidth: 2,
+                    points: [pos.x, pos.y],
+                    lineCap: "round",
+                    lineJoin: "round",
+                    tension: 0.5,
+                });
+        
+                layer.add(lastLine);
+            }
+            if (tool === 'Rectangle') {
+                startX = pos.x;
+                startY = pos.y;
+      
+                currentSquare = new Konva.Rect({
+                    x: startX,
+                    y: startY,
+                    width: 0,
+                    height: 0,
+                    fill: 'red',
+                    stroke: 'black',
+                    strokeWidth: 2,
+                });
+        
+                layer.add(currentSquare);
+            }
         });
 
         stage.on("mousemove touchmove", function ()
@@ -157,9 +190,19 @@
             if (!isDrawing) return;
 
             let pos = stage.getPointerPosition();
-            let newPoints = lastLine.points().concat([pos.x, pos.y]);
-            lastLine.points(newPoints);
-            layer.batchDraw();
+            if (tool === 'Line') {
+                let newPoints = lastLine.points().concat([pos.x, pos.y]);
+                lastLine.points(newPoints);
+                layer.batchDraw();
+            }
+            if (tool === 'Rectangle') {
+                const width = pos.x - startX;
+                const height = pos.y - startY;
+        
+                currentSquare.width(width);
+                currentSquare.height(height);
+                layer.batchDraw();
+            }
         });
 
         stage.on("mouseup touchend", function ()
@@ -168,12 +211,27 @@
             if (!isDrawing) return;
             
             isDrawing = false;
-            const shape = {
-                shapeType: 'Line',
-                points: lastLine.points(),
-                stroke: lastLine.stroke(),
-                strokeWidth: lastLine.strokeWidth(),
-            };
+            let shape;
+             if (tool === 'Line') { 
+                 shape = {
+                     shapeType: 'Line',
+                     points: lastLine.points(),
+                     stroke: lastLine.stroke(),
+                     strokeWidth: lastLine.strokeWidth(),
+                 };
+             }
+             if (tool === 'Rectangle') { 
+                shape = {
+                     shapeType: 'Rectangle',
+                     x: currentSquare.x(),
+                     y: currentSquare.y(),
+                     width: currentSquare.width(),
+                     height: currentSquare.height(),
+                     fill: currentSquare.fill(),
+                     stroke: currentSquare.stroke(),
+                     strokeWidth: currentSquare.strokeWidth(),
+                };
+             }
             
             hubConnection.invoke("SendDrawing", shape, groupId, listId.toString())
                             .catch(err => console.error(err.toString()));
