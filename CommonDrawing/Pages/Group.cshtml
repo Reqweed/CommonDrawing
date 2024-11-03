@@ -1,0 +1,337 @@
+﻿@page
+@model CommonDrawing.Pages.GroupModel
+@{
+    ViewData["Title"] = "Group page";
+}
+
+<form method="post">
+    <input type="hidden" name="__RequestVerificationToken" value="@ViewData["XSRF-TOKEN"]" />
+</form>
+<div id="tools" hidden>
+    <label for="shapeSelect">Select tool:</label>
+    <select id="shapeSelect" class="form-control mb-2">
+        <option value="Line">Line</option>
+        <option value="Text">Text</option>
+    </select>
+    <input type="text" id="textInput" class="form-control mb-2" placeholder="Add some text" hidden/>
+</div>
+<div class="mt-3 mb-3" id="button-container">
+    <button id="addList" class="btn btn-primary">Add List</button>
+     <button id="removeList" class="btn btn-primary">Remove List</button>
+</div>
+
+<div id="stagesContainer" class="border p-3"></div>
+
+<div id="users">
+    <h4>Users in group:</h4>
+    <ul id="users-list"></ul>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.js"></script>
+<script src="https://unpkg.com/konva@9/konva.min.js"></script>
+
+<script>
+    const container = document.getElementById('stagesContainer');
+    const groupId = '@Model.Group.GroupId';
+    const groupName = '@Model.Group.Name';
+    const userName = '@Model.UserName';
+    const userId = '@Model.UserId'
+    let isDrawing = false;
+    let lastLine;
+    let countList = 0;
+    let canDraw = false;
+    const layers = [];
+    let selectStage;
+    let tool = document.getElementById('shapeSelect').value;
+
+    const hubConnection = new signalR.HubConnectionBuilder()
+        .withUrl("/drawing")
+        .configureLogging(signalR.LogLevel.Information)
+        .build();
+    
+    hubConnection.on("LoadDrawings", function (shapes, listId)
+    {   
+        if (shapes.length === 0) {
+            createStage(listId);
+        } else {
+            shapes.forEach(shape => draw(shape, listId))
+        }
+    });
+    
+    function draw(shape, listId) {
+        const index = searchListIndex(listId);
+        if (index === -1) {
+            createStage(listId);
+        }
+
+        const layer = layers[searchListIndex(listId)].layer;
+        if (shape.shapeType === 'Line') {  
+            const line = new Konva.Line({
+                stroke: shape.stroke,
+                strokeWidth: shape.strokeWidth,
+                points: shape.points,
+            });
+
+            layer.add(line);
+        } else if (shape.shapeType === 'Text') {
+            const text = new Konva.Text({
+                x: shape.x,
+                y: shape.y,
+                text: shape.text,
+                fontSize: shape.fontSize,
+                fontFamily: shape.fontFamily,
+                fill: shape.fill,
+                draggable: true
+            });
+
+            layer.add(text);
+        } else {
+            console.log(shape.shapeType)
+        }
+
+        layer.batchDraw();
+    }
+    
+    document.getElementById('addList').addEventListener('click', async () => {
+        createStage(++countList);
+        await hubConnection.invoke("AddList", groupId.toString(), countList.toString());
+    });
+    hubConnection.on("AddList", function (listId)
+    {   
+        console.log(listId);
+        createStage(listId);
+    });
+    
+    function createStage(listId) {
+        const stageContainer = document.createElement('div');
+        stageContainer.style.border = '2px solid #ccc';
+        stageContainer.style.margin = '10px';
+        stageContainer.style.backgroundColor = '#f8f9fa';
+        stageContainer.style.height = '500px';
+        stageContainer.style.wight = container.offsetWidth;
+        const numList = listId;
+       
+        stageContainer.id = numList.toString();
+    
+        const stage = new Konva.Stage({
+            container: stageContainer,
+            width: container.offsetWidth,
+            height: 500
+        });
+        
+        stageContainer.addEventListener('click', () => {
+            selectStage = numList;
+        });
+        
+        const layer = new Konva.Layer();
+        stage.add(layer);
+    
+        layers.push({ num: numList, layer: layer });
+        addStageEvents(stage, layer, numList);
+        container.appendChild(stageContainer);
+    }
+    
+    function addStageEvents(stage, layer, listId) {
+        stage.on("mousedown touchstart", function ()
+        {
+            if (!canDraw) return;
+            if (tool !== 'Line') return;
+
+            isDrawing = true;
+            let pos = stage.getPointerPosition();
+            lastLine = new Konva.Line({
+                stroke: "black",
+                strokeWidth: 2,
+                points: [pos.x, pos.y],
+                lineCap: "round",
+                lineJoin: "round",
+                tension: 0.5,
+            });
+
+            layer.add(lastLine);
+        });
+
+        stage.on("mousemove touchmove", function ()
+        {
+            if (!canDraw) return;
+            if (!isDrawing) return;
+
+            let pos = stage.getPointerPosition();
+            let newPoints = lastLine.points().concat([pos.x, pos.y]);
+            lastLine.points(newPoints);
+            layer.batchDraw();
+        });
+
+        stage.on("mouseup touchend", function ()
+        {
+            if (!canDraw) return;
+            if (!isDrawing) return;
+            
+            isDrawing = false;
+            const shape = {
+                shapeType: 'Line',
+                points: lastLine.points(),
+                stroke: lastLine.stroke(),
+                strokeWidth: lastLine.strokeWidth(),
+            };
+            
+            hubConnection.invoke("SendDrawing", shape, groupId, listId.toString())
+                            .catch(err => console.error(err.toString()));
+        });
+
+         stage.on('click', function() {
+             if (!canDraw) return;
+             if (tool !== 'Text') return;
+             
+             const textInput = document.getElementById('textInput').value;
+             
+             if (textInput) {
+                 const position = stage.getPointerPosition();
+        
+                 const text = new Konva.Text({
+                     x: position.x,
+                     y: position.y,
+                     text: textInput,
+                     fontSize: 20,
+                     fontFamily: 'Calibri',
+                     fill: 'black',
+                     draggable: true
+                 });
+                 const shape = {
+                     shapeType: 'Text',
+                     x: text.x(),
+                     y: text.y(),
+                     text: text.text(),
+                     fontSize: text.fontSize(),
+                     fontFamily: text.fontFamily(),
+                     fill: text.fill(),
+                 };
+                             
+                 layer.add(text);
+                 layer.draw();
+                 hubConnection.invoke("SendDrawing", shape, groupId, listId.toString())
+                                             .catch(err => console.error(err.toString()));
+             }
+         });
+         
+        stage.add(layer);
+    }
+    
+    hubConnection.on("UsersInGroup", function (users, ownerId, permissions)
+    {
+        const usersListElement = document.getElementById("users-list");
+    
+        if (userId === ownerId)
+        {
+            canDraw = true;
+            usersListElement.innerHTML = "";
+            Object.entries(users).forEach(([id, userName]) =>
+            {
+                if (ownerId !== id)
+                {
+                    const li = document.createElement("li");
+                    li.textContent = `ID: ${id}, Name: ${userName}`;
+    
+                    const permissionToggle = document.createElement("button");
+                    permissionToggle.textContent = permissions[id] ? "Unable permission" : "Able permission";
+                    permissionToggle.addEventListener("click", () =>
+                    {
+                        can = !permissions[id];
+                        hubConnection.invoke("SetDrawingPermission", id, groupId, can)
+                            .catch(err => console.error(err.toString()));
+                    });
+                    li.appendChild(permissionToggle);
+    
+                    usersListElement.appendChild(li);
+                }
+            });
+            document.getElementById('tools').removeAttribute('hidden');
+        }
+        else {
+            document.getElementById("users").remove();
+            document.getElementById("button-container").remove();
+        }
+    });
+    
+    hubConnection.on("PermissionChanged", function (can, users, ownerId, permissions)
+    {
+        canDraw = can;
+    
+        const tools = document.getElementById('tools');
+        if (canDraw) {
+            tools.removeAttribute('hidden');
+        } else {
+             tools.setAttribute('hidden', '');
+        }
+        
+        const usersListElement = document.getElementById("users-list");
+    
+        if (userId === ownerId)
+        {
+            usersListElement.innerHTML = "";
+            Object.entries(users).forEach(([id, userName]) =>
+            {
+                if (ownerId !== id)
+                {
+                    const li = document.createElement("li");
+                    li.textContent = `ID: ${id}, Name: ${userName}`;
+    
+                    const permissionToggle = document.createElement("button");
+                    permissionToggle.textContent = permissions[id] ? "Unable permission" : "Able permission";
+                    permissionToggle.addEventListener("click", () =>
+                    {
+                        canD = !permissions[id];
+                        hubConnection.invoke("SetDrawingPermission", userId, groupId, canD)
+                            .catch(err => console.error(err.toString()));
+                    });
+                    li.appendChild(permissionToggle);
+    
+                    usersListElement.appendChild(li);
+                }
+            });
+        }
+    });
+    
+    hubConnection.on("Drawing", function (shape, listId)
+    {
+        draw(shape, listId);
+    });
+    
+    document.getElementById('shapeSelect').addEventListener('change', (event) => {
+        tool = event.target.value;
+        if (tool === 'Text') {
+            document.getElementById('textInput').removeAttribute('hidden');
+        } else {
+            document.getElementById('textInput').setAttribute('hidden','');
+        }
+    });
+    
+    document.getElementById('removeList').addEventListener('click', () => {
+        removeLayerById(selectStage);
+        hubConnection.invoke("RemoveList", groupId, selectStage.toString());
+    });
+    function removeLayerById(id) {
+        const stageContainer = document.getElementById(`${id}`);
+        if (stageContainer) {
+            stageContainer.remove();
+            const index = searchListIndex(id);
+            if (index !== -1) {
+                layers.splice(index, 1);
+            }
+        }
+    }
+    function searchListIndex(id) {
+        return layers.findIndex(layer => layer.num === id);
+    }
+    
+    hubConnection.on("RemoveList", function (listId) {
+        removeLayerById(listId);
+    });
+    
+    hubConnection.start().then(() => {
+        hubConnection.invoke("JoinGroup", groupName, userId, groupId, userName)
+            .catch(err => console.error(err.toString()));
+        hubConnection.invoke("GetPoints", groupId)
+                    .catch(err => console.error(err.toString()));   
+    });
+</script>

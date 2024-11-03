@@ -1,0 +1,15 @@
+﻿@page
+@model CommonDrawing.Pages.LoginModel
+
+<div class="centered-form mt-5 p-4 border rounded">
+    <form method="post">
+        <fieldset>
+            <legend>Login</legend>
+            <div class="form-group">
+                <label asp-for="UserName">Name</label>
+                <input class="form-control" type="text" asp-for="UserName" required>
+            </div>
+            <button type="submit" class="btn btn-success mt-3">Login</button>
+        </fieldset>
+    </form>
+</div>

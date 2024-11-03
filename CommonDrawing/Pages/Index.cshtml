@@ -1,10 +1,55 @@
 ﻿@page
-@model IndexModel
-
+@model CommonDrawing.Pages.IndexModel
 @{
-    Layout = "Shared/_Layout";
+    ViewData["Title"] = "Home page";
 }
 
-<div>
+<form method="post">
+    <fieldset>
+        <legend>New group</legend>
+        <div class="form-group">
+            <label asp-for="GroupName">Name</label>
+            <input id="groupName" class="form-control" type="text" asp-for="GroupName" required>
+        </div>
+        <button id="newGroup" type="submit" class="btn btn-success mt-3 mb-3">New group</button>
+    </fieldset>
+</form>
 
-</div>
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Link</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var group in Model.Groups)
+        {
+            <tr>
+                <td>@group.Name</td>
+                <td><a asp-page="Group" asp-route-id="@group.GroupId">Link</a></td>
+            </tr>
+        }
+    </tbody>
+</table>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.js"></script>
+<script>
+    const hubConnection = new signalR.HubConnectionBuilder()
+        .withUrl("/drawing")
+        .configureLogging(signalR.LogLevel.Information)
+        .build();
+
+    hubConnection.start()
+        .catch(err => console.error(err.toString()));
+
+    document.getElementById("newGroup").addEventListener("click", () => {
+        groupName = document.getElementById("groupName").value;
+        userName = '@Model.UserName';
+        userId = '@Model.UserId'
+        if (groupName)
+        {
+            hubConnection.invoke("JoinGroup", groupName, userId, null, userName)
+                .catch(err => console.error(err.toString()));
+        }
+    });
+</script>
